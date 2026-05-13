@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --color-cream: #fff8f0;
+  --color-cocoa: #3b2a22;
+  --color-terracotta: #c45c3e;
+  --color-honey: #e8b86d;
+  --color-moss: #4f6f52;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cream text-cocoa antialiased;
+}
