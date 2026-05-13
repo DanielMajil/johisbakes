@@ -1,14 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { MenuItem, Partner, Review, SiteSettings } from "@/lib/types";
+import { MENU_GROUP_ADMIN_LABEL, MENU_GROUPS, type MenuGroup, normalizeMenuGroup } from "@/lib/menu-groups";
+import type { MenuCategory, MenuItem, Partner, Review, SiteSettings } from "@/lib/types";
 
 type AdminPayload = {
   menu: MenuItem[];
+  menu_categories: MenuCategory[];
   reviews: Review[];
   partners: Partner[];
   settings: SiteSettings | null;
 };
+
+function enrichMenuItem(item: MenuItem, categories: MenuCategory[]): MenuItem {
+  const category_name = item.category_id ? (categories.find((c) => c.id === item.category_id)?.name ?? null) : null;
+  return {
+    ...item,
+    menu_group: normalizeMenuGroup(item.menu_group),
+    category_name,
+  };
+}
 
 function dollarsFromCents(cents: number) {
   return (cents / 100).toFixed(2);
@@ -34,6 +45,7 @@ export function AdminApp() {
   const [data, setData] = useState<AdminPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [menuTab, setMenuTab] = useState<MenuGroup>("drinks");
 
   const load = useCallback(async () => {
     setError(null);
@@ -44,8 +56,10 @@ export function AdminApp() {
       setData(null);
       return;
     }
+    const menu_categories = json.menu_categories ?? [];
     setData({
-      menu: json.menu ?? [],
+      menu: (json.menu ?? []).map((m) => enrichMenuItem(m as MenuItem, menu_categories)),
+      menu_categories,
       reviews: json.reviews ?? [],
       partners: json.partners ?? [],
       settings: json.settings ?? null,
@@ -90,9 +104,10 @@ export function AdminApp() {
       if (!res.ok) throw new Error(json.error || "Save failed");
       setData((d) => {
         if (!d) return d;
+        const item = enrichMenuItem(json.item as MenuItem, d.menu_categories);
         return {
           ...d,
-          menu: d.menu.map((m) => (m.id === id ? json.item : m)),
+          menu: d.menu.map((m) => (m.id === id ? item : m)),
         };
       });
     } catch (e) {
@@ -119,9 +134,11 @@ export function AdminApp() {
   };
 
   const createMenu = async () => {
+    if (!data) return;
     setBusy(true);
     setError(null);
     try {
+      const groupCount = data.menu.filter((m) => normalizeMenuGroup(m.menu_group) === menuTab).length;
       const res = await fetch("/api/admin/menu", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -129,16 +146,88 @@ export function AdminApp() {
           name: "New item",
           price_cents: 0,
           description: "",
-          category: "",
+          category: null,
+          menu_group: menuTab,
+          category_id: null,
           is_available: true,
-          sort_order: (data?.menu.length ?? 0) * 10,
+          sort_order: groupCount * 10,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Create failed");
-      setData((d) => (d ? { ...d, menu: [...d.menu, json.item] } : d));
+      setData((d) => {
+        if (!d) return d;
+        const item = enrichMenuItem(json.item as MenuItem, d.menu_categories);
+        return { ...d, menu: [...d.menu, item] };
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createMenuCategory = async (menu_group: MenuGroup, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const sort_order =
+        (data?.menu_categories.filter((c) => c.menu_group === menu_group).length ?? 0) * 10;
+      const res = await fetch("/api/admin/menu-categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ menu_group, name: trimmed, sort_order }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Create failed");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const patchMenuCategory = async (id: string, partial: { name?: string; sort_order?: number }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/menu-categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(partial),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Save failed");
+      setData((d) => {
+        if (!d) return d;
+        const nextCats = d.menu_categories.map((c) => (c.id === id ? (json.category as MenuCategory) : c));
+        return {
+          ...d,
+          menu_categories: nextCats,
+          menu: d.menu.map((m) => enrichMenuItem(m, nextCats)),
+        };
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteMenuCategory = async (id: string) => {
+    if (!confirm("Delete this category? Items using it will lose the category link.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/menu-categories/${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Delete failed");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
     } finally {
       setBusy(false);
     }
@@ -256,7 +345,7 @@ export function AdminApp() {
             />
 
             <section className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold">Menu & availability</h2>
                 <button
                   type="button"
@@ -264,27 +353,57 @@ export function AdminApp() {
                   onClick={() => void createMenu()}
                   disabled={busy}
                 >
-                  Add item
+                  Add item here
                 </button>
               </div>
               <p className="text-xs text-zinc-600">
-                Toggle “Available” when something sells out. Customers always see the live list on{" "}
-                <span className="font-semibold">/menu</span>.
+                Use the two menus below for drinks vs baked goods. Categories are created per menu, then assigned to
+                each item. Customers see both sections on the home page and on <span className="font-semibold">/menu</span>.
               </p>
-              <div className="space-y-3">
-                {data.menu.map((item) => (
-                  <MenuEditorCard
-                    key={item.id}
-                    item={item}
-                    busy={busy}
-                    onPatch={(p) => void patchMenu(item.id, p)}
-                    onDelete={() => void deleteMenu(item.id)}
-                    onUpload={async (file) => {
-                      const url = await uploadImage(file);
-                      await patchMenu(item.id, { image_url: url });
-                    }}
-                  />
+              <div className="flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-white p-1 shadow-sm">
+                {MENU_GROUPS.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-semibold sm:flex-none ${
+                      menuTab === g ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"
+                    }`}
+                    onClick={() => setMenuTab(g)}
+                  >
+                    {MENU_GROUP_ADMIN_LABEL[g]}
+                  </button>
                 ))}
+              </div>
+
+              <MenuCategoriesPanel
+                group={menuTab}
+                categories={data.menu_categories}
+                busy={busy}
+                onCreate={(name) => void createMenuCategory(menuTab, name)}
+                onPatchCat={(id, p) => void patchMenuCategory(id, p)}
+                onDeleteCat={(id) => void deleteMenuCategory(id)}
+              />
+
+              <div className="space-y-3">
+                {data.menu
+                  .filter((item) => normalizeMenuGroup(item.menu_group) === menuTab)
+                  .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+                  .map((item) => (
+                    <MenuEditorCard
+                      key={item.id}
+                      item={item}
+                      categories={data.menu_categories.filter(
+                        (c) => c.menu_group === normalizeMenuGroup(item.menu_group)
+                      )}
+                      busy={busy}
+                      onPatch={(p) => void patchMenu(item.id, p)}
+                      onDelete={() => void deleteMenu(item.id)}
+                      onUpload={async (file) => {
+                        const url = await uploadImage(file);
+                        await patchMenu(item.id, { image_url: url });
+                      }}
+                    />
+                  ))}
               </div>
             </section>
 
@@ -442,14 +561,135 @@ function SiteForm({
   );
 }
 
+function MenuCategoriesPanel({
+  group,
+  categories,
+  busy,
+  onCreate,
+  onPatchCat,
+  onDeleteCat,
+}: {
+  group: MenuGroup;
+  categories: MenuCategory[];
+  busy: boolean;
+  onCreate: (name: string) => void | Promise<void>;
+  onPatchCat: (id: string, partial: { name?: string; sort_order?: number }) => void | Promise<void>;
+  onDeleteCat: (id: string) => void | Promise<void>;
+}) {
+  const rows = categories.filter((c) => c.menu_group === group);
+  const [newName, setNewName] = useState("");
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-3">
+      <p className="text-xs font-semibold text-zinc-600">Categories for this menu</p>
+      <p className="text-[11px] text-zinc-500">
+        Example: Frapes, Iced coffee, Cookies. Items can pick one category from this list (or none).
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <input
+          className="min-w-[12rem] flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-900/15"
+          placeholder="New category name"
+          value={newName}
+          disabled={busy}
+          onChange={(e) => setNewName(e.target.value)}
+        />
+        <button
+          type="button"
+          className="rounded-full bg-white px-3 py-2 text-sm font-semibold ring-1 ring-zinc-200 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => {
+            void onCreate(newName);
+            setNewName("");
+          }}
+        >
+          Add category
+        </button>
+      </div>
+      <div className="space-y-2">
+        {rows.length === 0 ? <p className="text-xs text-zinc-500">No categories yet — add one above.</p> : null}
+        {rows.map((c) => (
+          <MenuCategoryRow key={c.id} category={c} busy={busy} onPatchCat={onPatchCat} onDeleteCat={onDeleteCat} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MenuCategoryRow({
+  category,
+  busy,
+  onPatchCat,
+  onDeleteCat,
+}: {
+  category: MenuCategory;
+  busy: boolean;
+  onPatchCat: (id: string, partial: { name?: string; sort_order?: number }) => void | Promise<void>;
+  onDeleteCat: (id: string) => void | Promise<void>;
+}) {
+  const [name, setName] = useState(category.name);
+  const [sort, setSort] = useState(String(category.sort_order));
+
+  useEffect(() => {
+    setName(category.name);
+    setSort(String(category.sort_order));
+  }, [category]);
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-2">
+      <label className="min-w-[8rem] flex-1 space-y-1">
+        <span className="text-[10px] font-semibold text-zinc-500">Name</span>
+        <input
+          className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-900/15"
+          value={name}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <label className="w-20 space-y-1">
+        <span className="text-[10px] font-semibold text-zinc-500">Sort</span>
+        <input
+          className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-900/15"
+          inputMode="numeric"
+          value={sort}
+          disabled={busy}
+          onChange={(e) => setSort(e.target.value)}
+        />
+      </label>
+      <button
+        type="button"
+        className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+        disabled={busy}
+        onClick={() =>
+          void onPatchCat(category.id, {
+            name: name.trim(),
+            sort_order: Number.parseInt(sort, 10) || 0,
+          })
+        }
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        className="text-xs font-semibold text-red-700 disabled:opacity-50"
+        disabled={busy}
+        onClick={() => void onDeleteCat(category.id)}
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
 function MenuEditorCard({
   item,
+  categories,
   busy,
   onPatch,
   onDelete,
   onUpload,
 }: {
   item: MenuItem;
+  categories: MenuCategory[];
   busy: boolean;
   onPatch: (p: Record<string, unknown>) => void | Promise<void>;
   onDelete: () => void | Promise<void>;
@@ -457,17 +697,21 @@ function MenuEditorCard({
 }) {
   const [name, setName] = useState(item.name);
   const [description, setDescription] = useState(item.description ?? "");
-  const [category, setCategory] = useState(item.category ?? "");
+  const [menuGroup, setMenuGroup] = useState<MenuGroup>(normalizeMenuGroup(item.menu_group));
+  const [categoryId, setCategoryId] = useState(item.category_id ?? "");
   const [price, setPrice] = useState(dollarsFromCents(item.price_cents));
   const [sort, setSort] = useState(String(item.sort_order));
 
   useEffect(() => {
     setName(item.name);
     setDescription(item.description ?? "");
-    setCategory(item.category ?? "");
+    setMenuGroup(normalizeMenuGroup(item.menu_group));
+    setCategoryId(item.category_id ?? "");
     setPrice(dollarsFromCents(item.price_cents));
     setSort(String(item.sort_order));
   }, [item]);
+
+  const categoryOptions = categories.filter((c) => c.menu_group === menuGroup);
 
   return (
     <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -475,10 +719,44 @@ function MenuEditorCard({
         <div className="min-w-0 flex-1 space-y-2">
           <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <Area label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
-            <Field label="Sort order" value={sort} inputMode="numeric" onChange={(e) => setSort(e.target.value)} />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-zinc-600">Menu</span>
+              <select
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-900/15"
+                value={menuGroup}
+                disabled={busy}
+                onChange={(e) => {
+                  const g = normalizeMenuGroup(e.target.value);
+                  setMenuGroup(g);
+                  setCategoryId("");
+                }}
+              >
+                {MENU_GROUPS.map((g) => (
+                  <option key={g} value={g}>
+                    {MENU_GROUP_ADMIN_LABEL[g]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-zinc-600">Category</span>
+              <select
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-900/15"
+                value={categoryId}
+                disabled={busy}
+                onChange={(e) => setCategoryId(e.target.value)}
+              >
+                <option value="">None</option>
+                {categoryOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+          <Field label="Sort order" value={sort} inputMode="numeric" onChange={(e) => setSort(e.target.value)} />
           <Field label="Price (USD)" value={price} inputMode="decimal" onChange={(e) => setPrice(e.target.value)} />
         </div>
         <div className="flex shrink-0 flex-col items-center gap-1">
@@ -542,7 +820,9 @@ function MenuEditorCard({
             void onPatch({
               name,
               description: description.trim() || null,
-              category: category.trim() || null,
+              category: null,
+              menu_group: menuGroup,
+              category_id: categoryId || null,
               price_cents: cents,
               sort_order: Number.parseInt(sort, 10) || 0,
             });

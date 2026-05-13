@@ -17,7 +17,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 
   const patch: Record<string, unknown> = {};
-  if (typeof body.name === "string") patch.name = body.name.trim();
+  if (typeof body.name === "string") {
+    const n = body.name.trim();
+    if (!n) return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
+    patch.name = n;
+  }
   if (typeof body.sort_order === "number" && Number.isFinite(body.sort_order)) {
     patch.sort_order = body.sort_order;
   }
