@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminUnauthorized, requireAdminCookie } from "@/lib/admin-api";
+import { isMissingMenuCategoriesTableError, MENU_SPLIT_MIGRATION_INSTRUCTIONS } from "@/lib/menu-categories-db";
 import { isMenuGroup } from "@/lib/menu-groups";
 import { createSupabaseServiceClient } from "@/lib/supabase/admin";
 
@@ -27,6 +28,14 @@ export async function POST(req: Request) {
     .select("*")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingMenuCategoriesTableError(error.message)) {
+      return NextResponse.json(
+        { error: MENU_SPLIT_MIGRATION_INSTRUCTIONS, code: "MENU_MIGRATION_REQUIRED" },
+        { status: 422 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ category: data });
 }

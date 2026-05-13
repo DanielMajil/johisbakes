@@ -1,5 +1,16 @@
--- Run once on an existing Supabase project that already has public.menu_items (older schema).
--- Dashboard → SQL → New query → paste → Run.
+-- =============================================================================
+-- REQUIRED for drink/bake menus + categories (run once on existing projects)
+-- =============================================================================
+-- Supabase → SQL → New query → paste this entire file → Run.
+--
+-- Fixes errors like:
+--   Could not find the table 'public.menu_categories' in the schema cache
+--   Could not find the 'category_id' column of 'menu_items' in the schema cache
+--   column menu_items.menu_group does not exist
+--
+-- After a successful run, wait ~1 minute for the API schema cache to refresh,
+-- or run the NOTIFY line at the bottom (included) to reload PostgREST immediately.
+-- =============================================================================
 
 create table if not exists public.menu_categories (
   id uuid primary key default gen_random_uuid(),
@@ -42,3 +53,6 @@ alter table public.menu_items
 
 create index if not exists menu_categories_group_sort_idx on public.menu_categories (menu_group, sort_order);
 create index if not exists menu_items_group_sort_idx on public.menu_items (menu_group, sort_order);
+
+-- Ask PostgREST to reload the schema cache (avoids waiting on Supabase to pick up new tables/columns)
+notify pgrst, 'reload schema';

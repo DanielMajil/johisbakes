@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminUnauthorized, requireAdminCookie } from "@/lib/admin-api";
+import { isMenuItemsMissingNewColumnsError, isMissingMenuCategoriesTableError } from "@/lib/menu-categories-db";
 import { isMenuGroup, normalizeMenuGroup } from "@/lib/menu-groups";
 import { createSupabaseServiceClient } from "@/lib/supabase/admin";
 
@@ -35,26 +36,39 @@ export async function POST(req: Request) {
       .select("menu_group")
       .eq("id", category_id)
       .maybeSingle();
-    if (catErr || !cat || cat.menu_group !== menu_group) {
+    if (catErr && isMissingMenuCategoriesTableError(catErr.message)) {
+      category_id = null;
+    } else if (catErr || !cat || cat.menu_group !== menu_group) {
       category_id = null;
     }
   }
 
-  const { data, error } = await admin
-    .from("menu_items")
-    .insert({
-      name,
-      description,
-      price_cents,
-      category,
-      menu_group,
-      category_id,
-      image_url,
-      is_available,
-      sort_order,
-    })
-    .select("*")
-    .single();
+  const fullRow = {
+    name,
+    description,
+    price_cents,
+    category,
+    menu_group,
+    category_id,
+    image_url,
+    is_available,
+    sort_order,
+  };
+
+  const legacyRow = {
+    name,
+    description,
+    price_cents,
+    category,
+    image_url,
+    is_available,
+    sort_order,
+  };
+
+  let { data, error } = await admin.from("menu_items").insert(fullRow).select("*").single();
+  if (error && isMenuItemsMissingNewColumnsError(error.message)) {
+    ({ data, error } = await admin.from("menu_items").insert(legacyRow).select("*").single());
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

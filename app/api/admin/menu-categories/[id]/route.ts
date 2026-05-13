@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminUnauthorized, requireAdminCookie } from "@/lib/admin-api";
+import { isMissingMenuCategoriesTableError, MENU_SPLIT_MIGRATION_INSTRUCTIONS } from "@/lib/menu-categories-db";
 import { createSupabaseServiceClient } from "@/lib/supabase/admin";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -32,7 +33,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const admin = createSupabaseServiceClient();
   const { data, error } = await admin.from("menu_categories").update(patch).eq("id", id).select("*").single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingMenuCategoriesTableError(error.message)) {
+      return NextResponse.json(
+        { error: MENU_SPLIT_MIGRATION_INSTRUCTIONS, code: "MENU_MIGRATION_REQUIRED" },
+        { status: 422 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ category: data });
 }
 
@@ -43,6 +52,14 @@ export async function DELETE(_req: Request, ctx: Ctx) {
 
   const admin = createSupabaseServiceClient();
   const { error } = await admin.from("menu_categories").delete().eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingMenuCategoriesTableError(error.message)) {
+      return NextResponse.json(
+        { error: MENU_SPLIT_MIGRATION_INSTRUCTIONS, code: "MENU_MIGRATION_REQUIRED" },
+        { status: 422 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }
