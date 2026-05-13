@@ -1,5 +1,14 @@
 -- Run this in Supabase SQL Editor (Dashboard → SQL → New query) after creating a project.
 
+-- Categories belong to one top-level menu (drinks vs bakes). Items pick a category from the same menu.
+create table if not exists public.menu_categories (
+  id uuid primary key default gen_random_uuid(),
+  menu_group text not null check (menu_group in ('drinks', 'bakes')),
+  name text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
 -- Menu items (prices in cents; toggle is_available for sold out)
 create table if not exists public.menu_items (
   id uuid primary key default gen_random_uuid(),
@@ -7,6 +16,8 @@ create table if not exists public.menu_items (
   description text,
   price_cents integer not null check (price_cents >= 0),
   category text,
+  menu_group text not null default 'drinks' check (menu_group in ('drinks', 'bakes')),
+  category_id uuid references public.menu_categories (id) on delete set null,
   image_url text,
   is_available boolean not null default true,
   sort_order integer not null default 0,
@@ -55,12 +66,14 @@ create table if not exists public.site_settings (
 insert into public.site_settings (id) values (1)
 on conflict (id) do nothing;
 
+alter table public.menu_categories enable row level security;
 alter table public.menu_items enable row level security;
 alter table public.reviews enable row level security;
 alter table public.partners enable row level security;
 alter table public.site_settings enable row level security;
 
 -- Public read (anon key used by the website)
+create policy "menu_categories_select_public" on public.menu_categories for select using (true);
 create policy "menu_items_select_public" on public.menu_items for select using (true);
 create policy "reviews_select_public" on public.reviews for select using (is_published = true);
 create policy "partners_select_public" on public.partners for select using (is_published = true);
@@ -68,7 +81,9 @@ create policy "site_settings_select_public" on public.site_settings for select u
 
 -- Writes happen only with the service role key from your server (API routes), which bypasses RLS.
 
+create index if not exists menu_categories_group_sort_idx on public.menu_categories (menu_group, sort_order);
 create index if not exists menu_items_sort_idx on public.menu_items (sort_order, name);
+create index if not exists menu_items_group_sort_idx on public.menu_items (menu_group, sort_order);
 create index if not exists reviews_sort_idx on public.reviews (sort_order);
 create index if not exists partners_sort_idx on public.partners (sort_order);
 

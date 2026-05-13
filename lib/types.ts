@@ -1,9 +1,23 @@
+import type { MenuGroup } from "@/lib/menu-groups";
+
+export type MenuCategory = {
+  id: string;
+  menu_group: MenuGroup;
+  name: string;
+  sort_order: number;
+};
+
 export type MenuItem = {
   id: string;
   name: string;
   description: string | null;
   price_cents: number;
+  /** Legacy free-text label; prefer category_id + category_name. */
   category: string | null;
+  menu_group: MenuGroup;
+  category_id: string | null;
+  /** Filled by the server when loading the public menu (from menu_categories). */
+  category_name?: string | null;
   image_url: string | null;
   is_available: boolean;
   sort_order: number;
