@@ -707,12 +707,14 @@ function PartnersAdmin({
   busy,
   onAdd,
   onSave,
+  onUploadLogo,
   onDelete,
 }: {
   partners: Partner[];
   busy: boolean;
   onAdd: () => void;
   onSave: (id: string, body: Record<string, unknown>) => void;
+  onUploadLogo: (id: string, file: File) => Promise<void>;
   onDelete: (id: string) => void;
 }) {
   return (
@@ -723,9 +725,12 @@ function PartnersAdmin({
           Add partner
         </button>
       </div>
+      <p className="text-xs text-zinc-600">
+        Logos: tap the square to upload, “Remove logo” to clear, or paste a URL and save.
+      </p>
       <div className="space-y-3">
         {partners.map((p) => (
-          <PartnerRow key={p.id} partner={p} busy={busy} onSave={onSave} onDelete={onDelete} />
+          <PartnerRow key={p.id} partner={p} busy={busy} onSave={onSave} onUploadLogo={(file) => onUploadLogo(p.id, file)} onDelete={onDelete} />
         ))}
       </div>
     </section>
@@ -736,11 +741,13 @@ function PartnerRow({
   partner,
   busy,
   onSave,
+  onUploadLogo,
   onDelete,
 }: {
   partner: Partner;
   busy: boolean;
   onSave: (id: string, body: Record<string, unknown>) => void;
+  onUploadLogo: (file: File) => Promise<void>;
   onDelete: (id: string) => void;
 }) {
   const [company_name, setName] = useState(partner.company_name);
@@ -757,11 +764,49 @@ function PartnerRow({
 
   return (
     <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Field label="Company" value={company_name} onChange={(e) => setName(e.target.value)} />
-        <Field label="Logo URL" value={logo_url} onChange={(e) => setLogo(e.target.value)} />
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1 space-y-2">
+          <Field label="Company" value={company_name} onChange={(e) => setName(e.target.value)} />
+          <Field label="Logo URL (optional)" value={logo_url} onChange={(e) => setLogo(e.target.value)} />
+          <Area label="Note" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <label className="relative h-24 w-24 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-center text-[10px] text-zinc-500">
+            {partner.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={partner.logo_url} alt="" className="h-full w-full object-contain p-1" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center px-2">Tap to add logo</span>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="absolute inset-0 cursor-pointer opacity-0"
+              disabled={busy}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                try {
+                  await onUploadLogo(f);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Upload failed");
+                }
+              }}
+            />
+          </label>
+          {partner.logo_url ? (
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-red-700 underline decoration-red-700/40 underline-offset-2 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => onSave(partner.id, { logo_url: null })}
+            >
+              Remove logo
+            </button>
+          ) : null}
+        </div>
       </div>
-      <Area label="Note" value={note} onChange={(e) => setNote(e.target.value)} />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Field label="Sort" value={sort_order} onChange={(e) => setSort(e.target.value)} />
         <label className="flex items-center gap-2 text-sm font-semibold">
