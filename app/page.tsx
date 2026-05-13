@@ -19,8 +19,10 @@ export default async function HomePage() {
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
             <p className="font-semibold">Site database isn’t connected yet</p>
             <p className="mt-1 text-amber-900/80">
-              Add your Supabase keys to <code className="rounded bg-white/60 px-1">.env.local</code> and run{" "}
-              <code className="rounded bg-white/60 px-1">supabase/schema.sql</code>. ({error})
+              Add your Supabase keys to <code className="rounded bg-white/60 px-1">.env.local</code>. New project: run{" "}
+              <code className="rounded bg-white/60 px-1">supabase/schema.sql</code>. Existing project missing drink/bake
+              categories: run{" "}
+              <code className="rounded bg-white/60 px-1">supabase/migration_menu_sections.sql</code>. ({error})
             </p>
           </div>
         ) : null}

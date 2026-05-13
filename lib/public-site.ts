@@ -1,4 +1,5 @@
 import { normalizeMenuGroup } from "@/lib/menu-groups";
+import { isMissingMenuCategoriesTableError } from "@/lib/menu-categories-db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { MenuCategory, MenuItem, Partner, Review, SiteSettings } from "@/lib/types";
 
@@ -30,12 +31,18 @@ export async function loadPublicSite(): Promise<PublicSitePayload> {
       sb.from("site_settings").select("*").eq("id", 1).maybeSingle(),
     ]);
 
-    const err = menuR.error || catR.error || reviewsR.error || partnersR.error || settingsR.error;
+    const categoriesRecoverable = catR.error && isMissingMenuCategoriesTableError(catR.error.message);
+    const err =
+      menuR.error ||
+      (!categoriesRecoverable && catR.error ? catR.error : null) ||
+      reviewsR.error ||
+      partnersR.error ||
+      settingsR.error;
     if (err) {
       return { ...empty, error: err.message };
     }
 
-    const categories = (catR.data ?? []) as MenuCategory[];
+    const categories = (categoriesRecoverable ? [] : (catR.data ?? [])) as MenuCategory[];
     const catNames = new Map(categories.map((c) => [c.id, c.name]));
     const menu = (menuR.data ?? []).map((row) => {
       const r = row as Record<string, unknown>;
