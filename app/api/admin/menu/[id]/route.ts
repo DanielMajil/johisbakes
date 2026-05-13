@@ -20,7 +20,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (typeof body.name === "string") patch.name = body.name.trim();
   if (typeof body.description === "string") patch.description = body.description.trim() || null;
   if (typeof body.category === "string") patch.category = body.category.trim() || null;
-  if (typeof body.image_url === "string") patch.image_url = body.image_url.trim() || null;
+  if ("image_url" in body) {
+    if (body.image_url === null) patch.image_url = null;
+    else if (typeof body.image_url === "string") patch.image_url = body.image_url.trim() || null;
+  }
   if (typeof body.price_cents === "number" && Number.isFinite(body.price_cents) && body.price_cents >= 0) {
     patch.price_cents = body.price_cents;
   }

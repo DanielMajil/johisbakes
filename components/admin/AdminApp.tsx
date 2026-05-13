@@ -300,6 +300,10 @@ export function AdminApp() {
                 })
               }
               onSave={(id, body) => void reviewMut("PATCH", id, body)}
+              onUploadPhoto={async (id, file) => {
+                const url = await uploadImage(file);
+                await reviewMut("PATCH", id, { photo_url: url });
+              }}
               onDelete={(id) => {
                 if (!confirm("Delete review?")) return;
                 void reviewMut("DELETE", id);
@@ -317,6 +321,10 @@ export function AdminApp() {
                 })
               }
               onSave={(id, body) => void partnerMut("PATCH", id, body)}
+              onUploadLogo={async (id, file) => {
+                const url = await uploadImage(file);
+                await partnerMut("PATCH", id, { logo_url: url });
+              }}
               onDelete={(id) => {
                 if (!confirm("Delete partner?")) return;
                 void partnerMut("DELETE", id);
@@ -473,30 +481,42 @@ function MenuEditorCard({
           </div>
           <Field label="Price (USD)" value={price} inputMode="decimal" onChange={(e) => setPrice(e.target.value)} />
         </div>
-        <label className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 text-center text-[10px] text-zinc-500">
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <label className="relative h-24 w-24 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 text-center text-[10px] text-zinc-500">
+            {item.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={item.image_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center px-2">Tap to add photo</span>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="absolute inset-0 cursor-pointer opacity-0"
+              disabled={busy}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                try {
+                  await onUpload(f);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Upload failed");
+                }
+              }}
+            />
+          </label>
           {item.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.image_url} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span className="flex h-full w-full items-center justify-center px-2">Tap to add photo</span>
-          )}
-          <input
-            type="file"
-            accept="image/*"
-            className="absolute inset-0 cursor-pointer opacity-0"
-            disabled={busy}
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (!f) return;
-              try {
-                await onUpload(f);
-              } catch (err) {
-                alert(err instanceof Error ? err.message : "Upload failed");
-              }
-            }}
-          />
-        </label>
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-red-700 underline decoration-red-700/40 underline-offset-2 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => void onPatch({ image_url: null })}
+            >
+              Remove photo
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -548,12 +568,14 @@ function ReviewsAdmin({
   busy,
   onAdd,
   onSave,
+  onUploadPhoto,
   onDelete,
 }: {
   reviews: Review[];
   busy: boolean;
   onAdd: () => void;
   onSave: (id: string, body: Record<string, unknown>) => void;
+  onUploadPhoto: (id: string, file: File) => Promise<void>;
   onDelete: (id: string) => void;
 }) {
   return (
@@ -564,9 +586,12 @@ function ReviewsAdmin({
           Add review
         </button>
       </div>
+      <p className="text-xs text-zinc-600">
+        Customer photos: tap the square to upload, use “Remove photo” to clear, or paste an image URL and save.
+      </p>
       <div className="space-y-3">
         {reviews.map((r) => (
-          <ReviewRow key={r.id} review={r} busy={busy} onSave={onSave} onDelete={onDelete} />
+          <ReviewRow key={r.id} review={r} busy={busy} onSave={onSave} onUploadPhoto={(file) => onUploadPhoto(r.id, file)} onDelete={onDelete} />
         ))}
       </div>
     </section>
@@ -577,11 +602,13 @@ function ReviewRow({
   review,
   busy,
   onSave,
+  onUploadPhoto,
   onDelete,
 }: {
   review: Review;
   busy: boolean;
   onSave: (id: string, body: Record<string, unknown>) => void;
+  onUploadPhoto: (file: File) => Promise<void>;
   onDelete: (id: string) => void;
 }) {
   const [customer_name, setCustomer] = useState(review.customer_name);
@@ -598,11 +625,49 @@ function ReviewRow({
 
   return (
     <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Field label="Name" value={customer_name} onChange={(e) => setCustomer(e.target.value)} />
-        <Field label="Photo URL (optional)" value={photo_url} onChange={(e) => setPhoto(e.target.value)} />
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1 space-y-2">
+          <Field label="Name" value={customer_name} onChange={(e) => setCustomer(e.target.value)} />
+          <Area label="Quote" value={quote} onChange={(e) => setQuote(e.target.value)} />
+          <Field label="Photo URL (optional)" value={photo_url} onChange={(e) => setPhoto(e.target.value)} />
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <label className="relative h-24 w-24 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-center text-[10px] text-zinc-500">
+            {review.photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={review.photo_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center px-2">Tap to add photo</span>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="absolute inset-0 cursor-pointer opacity-0"
+              disabled={busy}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                try {
+                  await onUploadPhoto(f);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Upload failed");
+                }
+              }}
+            />
+          </label>
+          {review.photo_url ? (
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-red-700 underline decoration-red-700/40 underline-offset-2 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => onSave(review.id, { photo_url: null })}
+            >
+              Remove photo
+            </button>
+          ) : null}
+        </div>
       </div>
-      <Area label="Quote" value={quote} onChange={(e) => setQuote(e.target.value)} />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Field label="Sort" value={sort_order} onChange={(e) => setSort(e.target.value)} />
         <label className="flex items-center gap-2 text-sm font-semibold">

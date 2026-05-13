@@ -18,7 +18,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const patch: Record<string, unknown> = {};
   if (typeof body.company_name === "string") patch.company_name = body.company_name.trim();
-  if (typeof body.logo_url === "string") patch.logo_url = body.logo_url.trim() || null;
+  if ("logo_url" in body) {
+    if (body.logo_url === null) patch.logo_url = null;
+    else if (typeof body.logo_url === "string") patch.logo_url = body.logo_url.trim() || null;
+  }
   if (typeof body.note === "string") patch.note = body.note.trim() || null;
   if (typeof body.sort_order === "number" && Number.isFinite(body.sort_order)) {
     patch.sort_order = body.sort_order;

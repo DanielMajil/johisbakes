@@ -19,7 +19,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const patch: Record<string, unknown> = {};
   if (typeof body.customer_name === "string") patch.customer_name = body.customer_name.trim();
   if (typeof body.quote === "string") patch.quote = body.quote.trim();
-  if (typeof body.photo_url === "string") patch.photo_url = body.photo_url.trim() || null;
+  if ("photo_url" in body) {
+    if (body.photo_url === null) patch.photo_url = null;
+    else if (typeof body.photo_url === "string") patch.photo_url = body.photo_url.trim() || null;
+  }
   if (typeof body.sort_order === "number" && Number.isFinite(body.sort_order)) {
     patch.sort_order = body.sort_order;
   }
